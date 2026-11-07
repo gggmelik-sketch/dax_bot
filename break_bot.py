@@ -30,6 +30,11 @@ TRADE_START = int(os.environ.get("TRADE_START", "8"))     # година (вкл
 TRADE_END   = int(os.environ.get("TRADE_END", "18"))      # година (не включно)
 TRADE_DAYS  = os.environ.get("TRADE_DAYS", "1-5").strip() # 1=Пн .. 7=Нд
 FORCE_HOUR  = os.environ.get("FORCE_HOUR", "").strip()     # для тестів: примусова година
+# символи, що працюють усі 7 днів (своє вікно годин), напр. "BTCUSD,ETHUSD"
+ALWAYS = {s.strip().upper() for s in os.environ.get("ALWAYS_SYMBOLS", "").split(",") if s.strip()}
+ALWAYS_START = int(os.environ.get("ALWAYS_START", "8"))    # година (включно)
+ALWAYS_END   = int(os.environ.get("ALWAYS_END", "20"))     # година (не включно)
+ALWAYS_DAYS  = os.environ.get("ALWAYS_DAYS", "1-7").strip() # 1=Пн .. 7=Нд (за замовч. усі дні)
 API         = f"https://api.telegram.org/bot{TG_TOKEN}"
 
 SIDE = {"LONG": ("🟢", "↑"), "SHORT": ("🔴", "↓")}
@@ -46,6 +51,7 @@ def _parse_days(s):
             out.add(int(part))
     return out or {1, 2, 3, 4, 5}
 DAYS = _parse_days(TRADE_DAYS)
+ADAYS = _parse_days(ALWAYS_DAYS)
 
 _seen = {}  # дедуплікація: signature -> ts
 
@@ -62,14 +68,18 @@ def now_kyiv():
     return n
 
 
-def in_window():
+def _check_window(start, end, days):
     n = now_kyiv()
     iso_weekday = n.isoweekday()  # 1=Пн..7=Нд
-    if iso_weekday not in DAYS:
-        return False, f"день {iso_weekday} поза {sorted(DAYS)}"
-    if not (TRADE_START <= n.hour < TRADE_END):
-        return False, f"{n.hour:02d}:xx поза {TRADE_START:02d}-{TRADE_END:02d} Київ"
+    if iso_weekday not in days:
+        return False, f"день {iso_weekday} поза {sorted(days)}"
+    if not (start <= n.hour < end):
+        return False, f"{n.hour:02d}:xx поза {start:02d}-{end:02d} Київ"
     return True, f"{n.hour:02d}:{n.minute:02d} Київ — у вікні"
+
+
+def in_window():
+    return _check_window(TRADE_START, TRADE_END, DAYS)
 
 
 def tg_send(text):
@@ -167,7 +177,11 @@ class Handler(BaseHTTPRequestHandler):
         if is_dup(p):
             self._s(200, "duplicate ignored")
             return
-        ok, why = in_window()
+        sym = str(p.get("symbol", "")).upper()
+        if sym in ALWAYS:
+            ok, why = _check_window(ALWAYS_START, ALWAYS_END, ADAYS)
+        else:
+            ok, why = in_window()
         if ok:
             tg_send(build_message(p))
             log_row(p, True, why)
@@ -179,7 +193,11 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     print(f"GER40 break bot :{PORT}  DRY_RUN={DRY_RUN}  вікно {TRADE_START:02d}-{TRADE_END:02d} "
-          f"{TRADE_TZ} дні {sorted(DAYS)}  log={LOG_CSV}")
+          f"{TRADE_TZ} дні {sorted(DAYS)}")
+    if ALWAYS:
+        print(f"  спец-символи {sorted(ALWAYS)}: вікно {ALWAYS_START:02d}-{ALWAYS_END:02d} "
+              f"дні {sorted(ADAYS)}")
+    print(f"  log={LOG_CSV}")
     ok, why = in_window()
     print(f"Зараз: {why}")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
