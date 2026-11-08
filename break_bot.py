@@ -19,7 +19,8 @@ import urllib.request, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TG_TOKEN   = os.environ.get("TG_TOKEN", "").strip()
-TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "").strip()
+# один або кілька отримувачів через кому: "810335685,-1001234567890,..."
+TG_CHAT_IDS = [c.strip() for c in os.environ.get("TG_CHAT_ID", "").split(",") if c.strip()]
 SECRET     = os.environ.get("WEBHOOK_SECRET", "CHANGE_ME_SECRET").strip()
 PORT       = int(os.environ.get("PORT", "8080"))
 DRY_RUN    = os.environ.get("DRY_RUN", "").strip() not in ("", "0", "false", "False")
@@ -88,32 +89,56 @@ def tg_send(text):
         print(text)
         print("--------------------------")
         return True
-    if not TG_TOKEN or not TG_CHAT_ID:
+    if not TG_TOKEN or not TG_CHAT_IDS:
         return False
-    data = json.dumps({"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown",
-                       "disable_web_page_preview": True}).encode("utf-8")
-    try:
-        req = urllib.request.Request(f"{API}/sendMessage", data=data,
-                                     headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return 200 <= r.status < 300
-    except Exception as e:  # noqa: BLE001
-        print(f"[ERROR] telegram: {type(e).__name__}", file=sys.stderr)
-        return False
+    ok_any = False
+    for chat_id in TG_CHAT_IDS:
+        data = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "Markdown",
+                           "disable_web_page_preview": True}).encode("utf-8")
+        try:
+            req = urllib.request.Request(f"{API}/sendMessage", data=data,
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                ok_any = ok_any or (200 <= r.status < 300)
+        except Exception as e:  # noqa: BLE001
+            print(f"[ERROR] telegram {chat_id}: {type(e).__name__}", file=sys.stderr)
+    return ok_any
+
+
+def _sidetxt(side):
+    return "ЛОНГ" if side == "LONG" else "ШОРТ" if side == "SHORT" else side
 
 
 def build_message(p):
     side = p.get("side", "")
     emoji, arrow = SIDE.get(side, ("•", ""))
+    stage = str(p.get("stage", "")).upper()
+    sym = p.get("symbol", "GER40")
+    tf = p.get("tf", "")
+
+    if stage == "FVG":
+        # Стадія 2 — ФВГ сформувався, готовий сетап
+        lines = [f"{emoji} *ФВГ — сетап готовий {arrow}* {sym} [{tf}]"]
+        lines.append(f"Сторона: *{_sidetxt(side)}*")
+        lines.append(f"Вхід (середина FVG): `{p.get('entry', '—')}`")
+        lines.append(f"Стоп: `{p.get('stop', '—')}`")
+        lines.append(f"Цілі: `{p.get('t1', '—')}` · `{p.get('t2', '—')}` · `{p.get('t3', '—')}`")
+        lines.append("_1.5R / 2R / 2.5R — частинами, з переносом у беззбиток_")
+        if p.get("comment"):
+            lines.append("")
+            lines.append(f"_{p.get('comment')}_")
+        return "\n".join(lines)
+
+    # Стадія 1 — злам структури (без ФВГ)
     rel = p.get("relevant") in (True, "true", "True", 1)
     poi = p.get("poi", "none")
     disp = p.get("displacement") in (True, "true", "True", 1)
-    lines = [f"{emoji} *CHoCH {arrow}* {p.get('symbol', 'GER40')} [{p.get('tf', '')}]"]
-    lines.append(f"Рівень зламу: `{p.get('level', '—')}`")
+    lines = [f"{emoji} *Злам структури {arrow}* {sym} [{tf}]"]
+    lines.append(f"Рівень: `{p.get('level', '—')}`")
     if rel:
-        lines.append(f"Релевантність: ✅ *{poi}*" + (" · дисплейсмент ✅" if disp else ""))
+        lines.append(f"Контекст: ✅ *{poi}*" + (" · імпульс ✅" if disp else ""))
     else:
-        lines.append("Релевантність: ⚠️ *без HTF опори* (висока ймовірність зняття)")
+        lines.append("Контекст: ⚠️ *без HTF опори*")
     if p.get("comment"):
         lines.append("")
         lines.append(f"_{p.get('comment')}_")
@@ -136,7 +161,7 @@ def log_row(p, sent, reason):
 
 
 def is_dup(p):
-    sig = f"{p.get('symbol')}:{p.get('side')}:{p.get('level')}:{p.get('tf')}"
+    sig = f"{p.get('symbol')}:{p.get('side')}:{p.get('stage')}:{p.get('level', p.get('entry'))}:{p.get('tf')}"
     nowt = time.time()
     for k in [k for k, v in _seen.items() if nowt - v > 120]:
         _seen.pop(k, None)
