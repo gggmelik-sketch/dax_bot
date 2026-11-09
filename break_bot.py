@@ -54,6 +54,30 @@ def _parse_days(s):
 DAYS = _parse_days(TRADE_DAYS)
 ADAYS = _parse_days(ALWAYS_DAYS)
 
+
+# Пер-символьні сесії (пріоритет над усім). Формат env SESSIONS:
+#   "XAUUSD=10-23:1-5; US100=16-23:1-5"   (символ=початок-кінець:дні ; дні необовʼязкові)
+def _parse_sessions(s):
+    out = {}
+    for part in s.split(";"):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        sym, rest = part.split("=", 1)
+        sym = sym.strip().upper()
+        rest = rest.strip()
+        dset = {1, 2, 3, 4, 5}
+        if ":" in rest:
+            rest, dstr = rest.split(":", 1)
+            dset = _parse_days(dstr)
+        try:
+            a, b = rest.split("-")
+            out[sym] = (int(a), int(b), dset)
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+SESSIONS = _parse_sessions(os.environ.get("SESSIONS", ""))
+
 _seen = {}  # дедуплікація: signature -> ts
 
 
@@ -116,9 +140,21 @@ def build_message(p):
     sym = p.get("symbol", "GER40")
     tf = p.get("tf", "")
 
+    if stage == "BOS":
+        # Продовження руху (confirm)
+        lines = [f"{emoji} *BOS — продовження {arrow}* {sym} [{tf}]"]
+        lines.append(f"Сторона: *{_sidetxt(side)}*")
+        lines.append(f"Рівень: `{p.get('level', '—')}`")
+        if p.get("comment"):
+            lines.append("")
+            lines.append(f"_{p.get('comment')}_")
+        return "\n".join(lines)
+
     if stage == "FVG":
-        # Стадія 2 — ФВГ сформувався, готовий сетап
-        lines = [f"{emoji} *ФВГ — сетап готовий {arrow}* {sym} [{tf}]"]
+        # ФВГ-сетап: після CHoCH = перший вхід, після BOS = повторний вхід
+        after = str(p.get("after", "CHOCH")).upper()
+        head = "ФВГ — повторний вхід (confirm)" if after == "BOS" else "ФВГ — сетап готовий (вхід)"
+        lines = [f"{emoji} *{head} {arrow}* {sym} [{tf}]"]
         lines.append(f"Сторона: *{_sidetxt(side)}*")
         lines.append(f"Вхід (середина FVG): `{p.get('entry', '—')}`")
         lines.append(f"Стоп: `{p.get('stop', '—')}`")
@@ -203,7 +239,10 @@ class Handler(BaseHTTPRequestHandler):
             self._s(200, "duplicate ignored")
             return
         sym = str(p.get("symbol", "")).upper()
-        if sym in ALWAYS:
+        if sym in SESSIONS:
+            st, en, dys = SESSIONS[sym]
+            ok, why = _check_window(st, en, dys)
+        elif sym in ALWAYS:
             ok, why = _check_window(ALWAYS_START, ALWAYS_END, ADAYS)
         else:
             ok, why = in_window()
@@ -222,6 +261,8 @@ def main():
     if ALWAYS:
         print(f"  спец-символи {sorted(ALWAYS)}: вікно {ALWAYS_START:02d}-{ALWAYS_END:02d} "
               f"дні {sorted(ADAYS)}")
+    for s, (st, en, dys) in SESSIONS.items():
+        print(f"  сесія {s}: вікно {st:02d}-{en:02d} дні {sorted(dys)}")
     print(f"  log={LOG_CSV}")
     ok, why = in_window()
     print(f"Зараз: {why}")
