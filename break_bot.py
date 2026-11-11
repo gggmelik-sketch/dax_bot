@@ -150,6 +150,21 @@ def build_message(p):
             lines.append(f"_{p.get('comment')}_")
         return "\n".join(lines)
 
+    if stage == "TEST":
+        # Ціна повернулась і тестує ФВГ — точка входу
+        after = str(p.get("after", "CHOCH")).upper()
+        src = "BOS" if after == "BOS" else "CHoCH"
+        lines = ["🚨 *СЕРЕЖА ТЕСТ ФВГ!!!!!!!!* 🚨",
+                 f"🎯 *ТЕСТ ФВГ — точка входу {arrow}* {sym} [{tf}]"]
+        lines.append(f"Сторона: *{_sidetxt(side)}*  ·  після *{src}*")
+        lines.append(f"Вхід: `{p.get('entry', '—')}`")
+        lines.append(f"Стоп: `{p.get('stop', '—')}`")
+        lines.append(f"Цілі: `{p.get('t1', '—')}` · `{p.get('t2', '—')}` · `{p.get('t3', '—')}`")
+        if p.get("comment"):
+            lines.append("")
+            lines.append(f"_{p.get('comment')}_")
+        return "\n".join(lines)
+
     if stage == "FVG":
         # ФВГ-сетап: після CHoCH = перший вхід, після BOS = повторний вхід
         after = str(p.get("after", "CHOCH")).upper()
