@@ -150,6 +150,13 @@ def build_message(p):
             lines.append(f"_{p.get('comment')}_")
         return "\n".join(lines)
 
+    if stage == "CANCEL":
+        lines = [f"✖️ *Сетап скасовано {arrow}* {sym} [{tf}]"]
+        lines.append(f"Сторона: *{_sidetxt(side)}*  ·  рівень `{p.get('level', '—')}`")
+        if p.get("comment"):
+            lines.append(f"_{p.get('comment')}_")
+        return "\n".join(lines)
+
     if stage == "TEST":
         # Ціна повернулась і тестує ФВГ — точка входу
         after = str(p.get("after", "CHOCH")).upper()
