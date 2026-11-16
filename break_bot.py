@@ -139,6 +139,7 @@ def build_message(p):
     stage = str(p.get("stage", "")).upper()
     sym = p.get("symbol", "GER40")
     tf = p.get("tf", "")
+    aplus = p.get("aplus") in (True, "true", "True", 1)
 
     if stage == "BOS":
         # Продовження руху (confirm)
@@ -163,6 +164,8 @@ def build_message(p):
         src = "BOS" if after == "BOS" else "CHoCH"
         lines = ["🚨 *СЕРЕЖА ТЕСТ ФВГ!!!!!!!!* 🚨",
                  f"🎯 *ТЕСТ ФВГ — точка входу {arrow}* {sym} [{tf}]"]
+        if aplus:
+            lines.append("⭐ *A+ сетап — пріоритет!*")
         lines.append(f"Сторона: *{_sidetxt(side)}*  ·  після *{src}*")
         lines.append(f"Вхід: `{p.get('entry', '—')}`")
         lines.append(f"Стоп: `{p.get('stop', '—')}`")
@@ -175,13 +178,22 @@ def build_message(p):
     if stage == "FVG":
         # ФВГ-сетап: після CHoCH = перший вхід, після BOS = повторний вхід
         after = str(p.get("after", "CHOCH")).upper()
-        head = "ФВГ — повторний вхід (confirm)" if after == "BOS" else "ФВГ — сетап готовий (вхід)"
-        lines = [f"{emoji} *{head} {arrow}* {sym} [{tf}]"]
+        if aplus:
+            # ⭐ A+ — найкраща зв'язка за бектестом (BOS + тренд + сильний дисплейс)
+            lines = ["⭐⭐⭐ *A+ СЕТАП* ⭐⭐⭐",
+                     f"{emoji} *BOS + тренд + сильний ФВГ {arrow}* {sym} [{tf}]",
+                     "_Найкраща зв'язка (WR ~60-62%). Пріоритетний вхід._"]
+        else:
+            head = "ФВГ — повторний вхід (confirm)" if after == "BOS" else "ФВГ — сетап готовий (вхід)"
+            lines = [f"{emoji} *{head} {arrow}* {sym} [{tf}]"]
         lines.append(f"Сторона: *{_sidetxt(side)}*")
         lines.append(f"Вхід (середина FVG): `{p.get('entry', '—')}`")
         lines.append(f"Стоп: `{p.get('stop', '—')}`")
         lines.append(f"Цілі: `{p.get('t1', '—')}` · `{p.get('t2', '—')}` · `{p.get('t3', '—')}`")
-        lines.append("_1.5R / 2R / 2.5R — частинами, з переносом у беззбиток_")
+        if aplus:
+            lines.append("_Вхід ліміткою по центру ФВГ · тейк 1:1 · ризик 1-2%_")
+        else:
+            lines.append("_1.5R / 2R / 2.5R — частинами, з переносом у беззбиток_")
         if p.get("comment"):
             lines.append("")
             lines.append(f"_{p.get('comment')}_")
